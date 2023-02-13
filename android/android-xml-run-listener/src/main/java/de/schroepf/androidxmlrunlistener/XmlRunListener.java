@@ -1,5 +1,8 @@
 package de.schroepf.androidxmlrunlistener;
 
+import static android.os.Environment.DIRECTORY_DOCUMENTS;
+import static android.os.Environment.getExternalStoragePublicDirectory;
+
 import android.app.Instrumentation;
 import android.os.Build;
 import android.util.Log;
@@ -109,7 +112,8 @@ public class XmlRunListener extends InstrumentationRunListener {
     protected File getOutputFile(Instrumentation instrumentation) {
         // Seems like we need to put this into the target application's context as for the instrumentation app's
         // context we can never be sure if we have the correct permissions - and getFilesDir() seems to return null
-        return new File(instrumentation.getTargetContext().getExternalFilesDir(null), getFileName(instrumentation));
+        File parent = getDocumentsPathFile(instrumentation, true);
+        return new File(parent, getFileName(instrumentation));
     }
 
     /**
@@ -124,9 +128,44 @@ public class XmlRunListener extends InstrumentationRunListener {
         return findFile("report", 0, ".xml", instrumentation);
     }
 
+    private String checkFolder(String packageName, String postFixPath, boolean createFolder) {
+        /*
+         * The reason why we use Documents/PackageName/files is to simplify the changes required into
+         * the testwrapper
+         */
+        StringBuilder sb = new StringBuilder();
+            sb.append(getExternalStoragePublicDirectory(DIRECTORY_DOCUMENTS).toString())
+            .append('/')
+            .append(packageName)
+            .append(postFixPath);
+        String pathStr = sb.toString();
+
+        if (createFolder) {
+            File path = new File(pathStr);
+            if (!path.exists()) {
+                boolean ret = path.mkdir();
+                if (!ret) {
+                    Log.e(TAG, "error while creating path: " + path);
+                }
+            }
+        }
+        return pathStr;
+    }
+
+    private File getDocumentsPathFile(Instrumentation instr, boolean createFolders) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            String packageName = instr.getTargetContext().getPackageName();
+            checkFolder(packageName, "", createFolders);
+            String path = checkFolder(packageName, "/files", createFolders);
+            return new File(path);
+        } else {
+            return instr.getTargetContext().getExternalFilesDir(null);
+        }
+    }
+
     private String findFile(String fileNamePrefix, int iterator, String fileNamePostfix, Instrumentation instr) {
         String fileName = fileNamePrefix + "-" + iterator + fileNamePostfix;
-        File file = new File(instr.getTargetContext().getExternalFilesDir(null), fileName);
+        File file = new File(getDocumentsPathFile(instr, false), fileName);
 
         if (file.exists()) {
             return findFile(fileNamePrefix, iterator + 1, fileNamePostfix, instr);
@@ -229,6 +268,7 @@ public class XmlRunListener extends InstrumentationRunListener {
                     xmlSerializer.startTag(NAMESPACE, TAG_SKIPPED);
                     xmlSerializer.endTag(NAMESPACE, TAG_SKIPPED);
                     break;
+                default:
             }
 
             xmlSerializer.endTag(NAMESPACE, TAG_CASE);
